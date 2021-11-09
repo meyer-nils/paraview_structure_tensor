@@ -46,21 +46,21 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
 
     def RequestData(self, request, inInfo, outInfo):
         """Process the request submitted after applying the filter."""
+        # Access and wrap input source
         source_input = vtkUnstructuredGrid.GetData(inInfo[0])
         source = dsa.WrapDataObject(source_input)
         N = source.GetNumberOfCells()
 
-        output = dsa.WrapDataObject(vtkUnstructuredGrid.GetData(outInfo))
-        output.ShallowCopy(source_input)
-
-        # Create a vtkCellLocator for fast computation of neighborhood
+        # Create a vtkKdTreePointLocator for fast computation of neighborhood
         point_locator = vtk.vtkKdTreePointLocator()
         point_locator.SetDataSet(source_input)
         point_locator.BuildLocator()
 
-        # Fill new cell data
+        # Set up result arrays
         n = np.zeros(N)
         A = np.nan * np.ones((N, 3, 3))
+
+        # Iterate over cells
         for i in range(N):
             # Find neighbors
             idList = vtk.vtkIdList()
@@ -69,10 +69,8 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
             cell.ComputeBoundingSphere(pos)
             point_locator.FindPointsWithinRadius(self._radius, pos, idList)
 
-            # Number of neighbors
+            # Evaluate neighbors
             N0 = idList.GetNumberOfIds()
-            n[i] = idList.GetNumberOfIds()
-
             ids = [idList.GetId(j) for j in range(N0)]
             points = source.Points[ids]
             dist = points - pos
@@ -80,10 +78,16 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
             dist = dist / dist_norm
             w = np.ones_like(dist_norm)
 
-            # Compute strucutre tensors
+            # Assign number of neighbors
+            n[i] = N0
+
+            # Assign structure tensors
             if N0 > 0:
                 A[i, :, :] = np.einsum("k, ki, kj->ij", w, dist, dist) / np.sum(w)
 
+        # Create output
+        output = dsa.WrapDataObject(vtkUnstructuredGrid.GetData(outInfo))
+        output.ShallowCopy(source_input)
         output.CellData.append(n, "N")
         output.CellData.append(A, "Structure Tensor")
 
