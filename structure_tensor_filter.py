@@ -7,6 +7,9 @@ from vtkmodules.numpy_interface import dataset_adapter as dsa
 from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
 from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
 
+# Small constant to prevent division by zero
+EPS = 1.0e-10
+
 
 @smproxy.filter(label="Structure Tensor")
 @smproperty.input(name="Cells", port_index=0)
@@ -74,7 +77,7 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
             ids = [idList.GetId(j) for j in range(N0)]
             points = source.Points[ids]
             dist = points - pos
-            dist_norm = np.linalg.norm(dist, axis=1)
+            dist_norm = np.linalg.norm(dist, axis=1) + EPS
             dist = dist / dist_norm
             w = np.ones_like(dist_norm)
 
