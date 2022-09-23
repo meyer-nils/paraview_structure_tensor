@@ -61,7 +61,7 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
 
         # Set up result arrays
         n = np.zeros(N)
-        A = np.nan * np.ones((N, 3, 3))
+        A = np.nan * np.ones((N, 6))
 
         # Iterate over cells
         for i in range(N):
@@ -84,9 +84,18 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
             # Assign number of neighbors
             n[i] = N0
 
+            # Compute structure tensor
+            A_struct = np.einsum("k, ki, kj->ij", w, dist, dist) / np.sum(w)
+
             # Assign structure tensors
             if N0 > 0:
-                A[i, :, :] = np.einsum("k, ki, kj->ij", w, dist, dist) / np.sum(w)
+                # Extract symmetric part
+                A[i, 0] = A_struct[0, 0]  # XX
+                A[i, 1] = A_struct[1, 1]  # YY
+                A[i, 2] = A_struct[2, 2]  # ZZ
+                A[i, 3] = A_struct[0, 1]  # XY
+                A[i, 4] = A_struct[1, 2]  # YZ
+                A[i, 5] = A_struct[0, 2]  # XZ
 
         # Create output
         output = dsa.WrapDataObject(vtkUnstructuredGrid.GetData(outInfo))
