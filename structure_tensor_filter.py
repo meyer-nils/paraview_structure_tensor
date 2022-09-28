@@ -50,13 +50,29 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
     def RequestData(self, request, inInfo, outInfo):
         """Process the request submitted after applying the filter."""
         # Access and wrap input source
-        source_input = vtkUnstructuredGrid.GetData(inInfo[0])
-        source = dsa.WrapDataObject(source_input)
+        source_vtk = vtkUnstructuredGrid.GetData(inInfo[0])
+        source = dsa.WrapDataObject(source_vtk)
         N = source.GetNumberOfCells()
+
+        # Compute volume with filter
+        filt = vtk.vtkCellSizeFilter()
+        filt.SetInputDataObject(source_vtk)
+        filt.SetComputeArea(False)
+        filt.SetComputeLength(False)
+        filt.SetComputeVertexCount(False)
+        filt.Update()
+        volume_vtk = filt.GetOutput()
+
+        # Compute centers with filter
+        filt = vtk.vtkCellCenters()
+        filt.SetInputDataObject(volume_vtk)
+        filt.Update()
+        centers_vtk = filt.GetOutput()
+        centers = dsa.WrapDataObject(centers_vtk)
 
         # Create a vtkKdTreePointLocator for fast computation of neighborhood
         point_locator = vtk.vtkKdTreePointLocator()
-        point_locator.SetDataSet(source_input)
+        point_locator.SetDataSet(centers_vtk)
         point_locator.BuildLocator()
 
         # Set up result arrays
@@ -66,20 +82,18 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
         # Iterate over cells
         for i in range(N):
             # Find neighbors
+            pos = centers.Points[i]
             idList = vtk.vtkIdList()
-            pos = np.array([0.0, 0.0, 0.0])
-            cell = source.GetCell(i)
-            cell.ComputeBoundingSphere(pos)
             point_locator.FindPointsWithinRadius(self._radius, pos, idList)
 
             # Evaluate neighbors
             N0 = idList.GetNumberOfIds()
             ids = [idList.GetId(j) for j in range(N0)]
-            points = source.Points[ids]
+            points = centers.Points[ids]
             dist = points - pos
             dist_norm = np.linalg.norm(dist, axis=1) + EPS
             dist = dist / dist_norm
-            w = np.ones_like(dist_norm)
+            w = centers.PointData["Volume"][ids]
 
             # Assign number of neighbors
             n[i] = N0
@@ -99,7 +113,7 @@ class StructureTensorFilter(VTKPythonAlgorithmBase):
 
         # Create output
         output = dsa.WrapDataObject(vtkUnstructuredGrid.GetData(outInfo))
-        output.ShallowCopy(source_input)
+        output.ShallowCopy(volume_vtk)
         output.CellData.append(n, "N")
         output.CellData.append(A, "Structure Tensor")
 
